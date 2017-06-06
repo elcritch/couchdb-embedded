@@ -54,6 +54,7 @@ pipeline {
        their build results to each other during the build. Moving the
        build outside of the workdir should speed up the build process too,
        though it does mean we pollute /tmp whenever a build fails. */
+/* COMMENTED OUT FOR SPEED-TESTING!!! 
     stage('Test') {
       steps {
         parallel(centos6erlang183: {
@@ -269,10 +270,11 @@ pipeline {
         ) // parallel
       } // steps
     } // stage
+END OF COMMENT BLOCK */
 
     stage('Publish') {
       when {
-        branch '*(master|2.0.x|2.1.x)'
+        expression { return env.BRANCH_NAME ==~ /master|2.0.x|2.1.x|jenkins-pipeline/ }
       }
       agent any
       steps {
