@@ -1,8 +1,5 @@
 .DS_Store
 
-config.erl
-install.mk
-rel/*.config
 rel/dev*
 rel/tmpdata
 src/
