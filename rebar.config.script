@@ -65,6 +65,8 @@ DepDescs = [
 {jiffy,            "jiffy",            "d3c00e19d8fa20c21758402231247602190988d3"},
 {mochiweb,         "mochiweb",         "bd6ae7cbb371666a1f68115056f7b30d13765782"},
 {meck,             "meck",             {tag, "0.8.2"}},
+{luerl,            {url, "https://github.com/rvirding/luerl"},
+                   {tag, "v0.3"}},
 
 %% Deprecated
 {oauth,            "oauth",            "099057a98e41f3aff91e77e3cf496d6c6fd901df"}
