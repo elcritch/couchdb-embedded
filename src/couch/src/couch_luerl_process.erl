@@ -111,14 +111,16 @@ run(#evstate{ddocs=DDocs}, [<<"reset">>]) ->
     {#evstate{ddocs=DDocs, lua_state=Lua_state}, true};
 run(#evstate{ddocs=DDocs}, [<<"reset">>, QueryConfig]) ->
     LuaState = luerl:init(),
-    {#evstate{ddocs=DDocs, lua_state=LuaState, query_config=QueryConfig}, true};
-run(#evstate{lua_state=LuaState}=State, [<<"add_fun">> , BinFunc]) ->
-    LuaState1 = makefun(LuaState, BinFunc),
-    {State#evstate{lua_state=LuaState1}, true};
-run(State, [<<"map_doc">> , Doc]) ->
-    Resp = lists:map(fun({Sig, Fun}) ->
+    {#evstate{ddocs=DDocs, lua_state=luerl:init(), query_config=QueryConfig}, true};
+run(#evstate{funs=Chunks}=State, [<<"add_fun">> , BinFunc]) ->
+    {Sig, Chunk, NewLuaState} = makefun(LuaState, BinFunc),
+    {State#evstate{funs=Chunks ++ [Chunks]}, true};
+run(#evstate{lua_state=LuaState}=State, [<<"map_doc">> , Doc]) ->
+    Resp = lists:map(fun({Sig, Chunk}) ->
         erlang:put(Sig, []),
-        Fun(Doc),
+        % Execute Lua Chunk (akak Form / Function )
+        luerl:call_chunk(Chunk, Doc, LuaState)
+        % reverse results to match input order
         lists:reverse(erlang:get(Sig))
     end, State#evstate.funs),
     {State, Resp};
@@ -151,11 +153,14 @@ bindings(State, Sig) ->
 bindings(#evstate{lua_state=LSt0}, Sig, DDoc) ->
     _Self = self(),
 
-    LSt1 = luerl:set_table([log], fun(Msg) ->
+    % Elixir example:
+    % state1 = :luerl.set_table([:inc], fn ([val], state) -> {[val + 1], state} end, state)
+
+    LSt1 = luerl:set_table([log], fun([Msg], State) ->
         couch_log:info(Msg, [])
     end, LSt0)
 
-    LSt2 = luerl:set_table([emit], fun(Id, Value) ->
+    LSt2 = luerl:set_table([emit], fun([Id, Value], _State) ->
         Curr = erlang:get(Sig),
         erlang:put(Sig, [[Id, Value] | Curr])
     end, LSt1)
@@ -167,15 +172,17 @@ bindings(#evstate{lua_state=LSt0}, Sig, DDoc) ->
 makefun(State, Source) ->
     Sig = couch_crypto:hash(md5, Source),
     BoundState = bindings(State, Sig),
-    {Sig, makefun(State, Source, BindFuns)}.
+    {Chunk, LuaState} = compilefun(State, Source, BindFuns),
+    {Sig, Chunk, LuaState}.
 makefun(State, Source, {DDoc}) ->
     Sig = couch_crypto:hash(md5, lists:flatten([Source, term_to_binary(DDoc)])),
     BindFuns = bindings(State, Sig, {DDoc}),
-    {Sig, makefun(State, Source, BindFuns)};
-makefun(#evstate{lua_state=LuaState}, Source, BindFuns) when is_list(BindFuns) ->
+    {Chunk, _LuaState} = compilefun(State, Source, BindFuns),
+    {Sig, Chunk, LuaState}.
+compilefun(#evstate{lua_state=LuaState}, Source, BindFuns) ->
     case luerl:load(Source, LuaState) of
         {ok, Fun, NewLuaState} ->
-          {Fun, NewLuaState}
+          {Chunk, NewLuaState}
         {error, Reason}=Error ->
             couch_log:error("Syntax error on line: ~p~n",
                             Reason),
