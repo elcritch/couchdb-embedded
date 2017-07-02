@@ -113,25 +113,12 @@ run(#evstate{ddocs=DDocs}, [<<"reset">>, QueryConfig]) ->
     LuaState = luerl:init(),
     {#evstate{ddocs=DDocs, lua_state=luerl:init(), query_config=QueryConfig}, true};
 run(#evstate{funs=Chunks}=State, [<<"add_fun">> , BinFunc]) ->
-    {Sig, Chunk, NewLuaState} = makefun(LuaState, BinFunc),
-    {State#evstate{funs=Chunks ++ [Chunks]}, true};
+    {Sig, Chunk, _NewLuaState} = makefun(LuaState, BinFunc),
+    {State#evstate{ funs=Chunks ++ [{Sig,Chunk}] }, true};
 run(#evstate{lua_state=LuaState}=State, [<<"map_doc">> , Doc]) ->
-    Resp = lists:map(fun({Sig, Chunk}) ->
-        erlang:put(Sig, []),
-        % Execute Lua Chunk (akak Form / Function )
-        luerl:call_chunk(Chunk, Doc, LuaState)
-        % reverse results to match input order
-        lists:reverse(erlang:get(Sig))
-    end, State#evstate.funs),
-    {State, Resp};
+    {State, catch mapping(State, Doc)};
 run(State, [<<"reduce">>, Funs, KVs]) ->
-    {Keys, Vals} =
-    lists:foldl(fun([K, V], {KAcc, VAcc}) ->
-        {[K | KAcc], [V | VAcc]}
-    end, {[], []}, KVs),
-    Keys2 = lists:reverse(Keys),
-    Vals2 = lists:reverse(Vals),
-    {State, catch reduce(State, Funs, Keys2, Vals2, false)};
+    {State, catch reduce(State, Funs, KVs, false)};
 run(State, [<<"rereduce">>, Funs, Vals]) ->
     {State, catch reduce(State, Funs, null, Vals, true)};
 run(_, Unknown) ->
@@ -167,8 +154,7 @@ bindings(#evstate{lua_state=LSt0}, Sig, DDoc) ->
 
     LSt2.
 
-% thanks to erlview, via:
-% http://erlang.org/pipermail/erlang-questions/2003-November/010544.html
+% Handle Compilation of Luerl Function
 makefun(State, Source) ->
     Sig = couch_crypto:hash(md5, Source),
     BoundState = bindings(State, Sig),
@@ -180,6 +166,7 @@ makefun(State, Source, {DDoc}) ->
     {Chunk, _LuaState} = compilefun(State, Source, BindFuns),
     {Sig, Chunk, LuaState}.
 compilefun(#evstate{lua_state=LuaState}, Source, BindFuns) ->
+    % Compile Luerl Function into Chunks / Forms for Luerl VM
     case luerl:load(Source, LuaState) of
         {ok, Fun, NewLuaState} ->
           {Chunk, NewLuaState}
@@ -189,19 +176,38 @@ compilefun(#evstate{lua_state=LuaState}, Source, BindFuns) ->
             throw(Error)
     end.
 
-reduce(State, BinFuns, Keys, Vals, ReReduce) ->
-    Funs = case is_list(BinFuns) of
-        true ->
-            lists:map(fun(BF) -> makefun(State, BF) end, BinFuns);
-        _ ->
-            [makefun(State, BinFuns)]
-    end,
-    Reds = lists:map(fun({_Sig, Fun}) ->
+% Handle performing map/reduce requests
+mapping() ->
+  Resp = lists:map(fun({Sig, Chunk}) ->
+      erlang:put(Sig, []),
+      % Execute Lua Chunk (akak Form / Function )
+      luerl:call_chunk(Chunk, Doc, LuaState)
+      % reverse results to match input order
+      lists:reverse(erlang:get(Sig))
+  end, State#evstate.funs).
+
+reduce(State, BinFuns, Keys, Vals, ReReduce) when is_list(BinFuns) ->
+    % Compile Reduce Funs (note: consider caching? )
+    ReduceFuns = lists:map(fun(RF) ->
+      compilefun(State, RF)
+    end, BinFuns),
+    % Apply reductions
+    Reds = lists:map(fun({Chunk, _LuaState}) ->
         Fun(Keys, Vals, ReReduce)
-    end, Funs),
-    [true, Reds].
+    end, ReduceFuns),
+    [true, Reds];
+reduce(State, BinFun, Keys, Vals, ReReduce) ->
+    reduce(State, [BinFun], Keys, Vals, ReReduce).
+reduce(State, BinFun, KVPairs, ReReduce) ->
+    {Keys, Vals} = lists:foldl(fun([K, V], {KAcc, VAcc}) ->
+        {[K | KAcc], [V | VAcc]}
+    end, {[], []}, KVs),
+    Keys2 = lists:reverse(Keys),
+    Vals2 = lists:reverse(Vals),
+    reduce(State, [BinFun], Keys, Vals, ReReduce).
 
 
+% Convert various data forms to appropriate binary form
 to_binary({Data}) ->
     Pred = fun({Key, Value}) ->
         {to_binary(Key), to_binary(Value)}
