@@ -12,13 +12,13 @@
 
 # to run (requires ruby and rspec):
 # rspec test/view_server/query_server_spec.rb
-# 
+#
 # environment options:
 #   QS_TRACE=true
 #     shows full output from the query server
 #   QS_LANG=lang
 #     run tests on the query server (for now, one of: js, erlang)
-# 
+#
 
 COUCH_ROOT = "#{File.dirname(__FILE__)}/../.." unless defined?(COUCH_ROOT)
 LANGUAGE = ENV["QS_LANG"] || "js"
@@ -526,13 +526,13 @@ describe "query server normal case" do
     @fun = functions["show-simple"][LANGUAGE]
     @ddoc = make_ddoc(["shows","simple"], @fun)
     @qs.teach_ddoc(@ddoc)
-    @qs.run(["reset"]).should == true   
-    @qs.ddoc_run(@ddoc, 
-      ["shows","simple"], 
+    @qs.run(["reset"]).should == true
+    @qs.ddoc_run(@ddoc,
+      ["shows","simple"],
       [{:title => "Best ever", :body => "Doc body"}, {}]).should ==
-    ["resp", {"body" => "Best ever - Doc body"}] 
+    ["resp", {"body" => "Best ever - Doc body"}]
   end
-  
+
   it "should run map funs" do
     @qs.reset!
     @qs.run(["add_fun", functions["emit-twice"][LANGUAGE]]).should == true
@@ -583,13 +583,13 @@ describe "query server normal case" do
       @qs.teach_ddoc(@ddoc)
     end
     it "should allow good updates" do
-      @qs.ddoc_run(@ddoc, 
-        ["validate_doc_update"], 
+      @qs.ddoc_run(@ddoc,
+        ["validate_doc_update"],
         [{"good" => true}, {}, {}]).should == 1
     end
     it "should reject invalid updates" do
-      @qs.ddoc_run(@ddoc, 
-        ["validate_doc_update"], 
+      @qs.ddoc_run(@ddoc,
+        ["validate_doc_update"],
         [{"bad" => true}, {}, {}]).should == {"forbidden"=>"bad doc"}
     end
   end
@@ -601,8 +601,8 @@ describe "query server normal case" do
       @qs.teach_ddoc(@ddoc)
     end
     it "should show" do
-      @qs.ddoc_run(@ddoc, 
-        ["shows","simple"], 
+      @qs.ddoc_run(@ddoc,
+        ["shows","simple"],
         [{:title => "Best ever", :body => "Doc body"}, {}]).should ==
       ["resp", {"body" => "Best ever - Doc body"}]
     end
@@ -610,21 +610,21 @@ describe "query server normal case" do
 
   describe "show with headers" do
     before(:all) do
-      # TODO we can make real ddocs up there. 
+      # TODO we can make real ddocs up there.
       @fun = functions["show-headers"][LANGUAGE]
       @ddoc = make_ddoc(["shows","headers"], @fun)
       @qs.teach_ddoc(@ddoc)
     end
     it "should show headers" do
       @qs.ddoc_run(
-        @ddoc, 
-        ["shows","headers"], 
+        @ddoc,
+        ["shows","headers"],
         [{:title => "Best ever", :body => "Doc body"}, {}]
       ).
       should == ["resp", {"code"=>200,"headers" => {"X-Plankton"=>"Rusty"}, "body" => "Best ever - Doc body"}]
     end
   end
-  
+
   describe "recoverable error" do
     before(:all) do
       @fun = functions["error"][LANGUAGE]
@@ -639,7 +639,7 @@ describe "query server normal case" do
       @qs.run(["reset"]).should == true
     end
   end
-  
+
   describe "changes filter" do
     before(:all) do
       @fun = functions["filter-basic"][LANGUAGE]
@@ -647,14 +647,14 @@ describe "query server normal case" do
       @qs.teach_ddoc(@ddoc)
     end
     it "should only return true for good docs" do
-      @qs.ddoc_run(@ddoc, 
-        ["filters","basic"], 
+      @qs.ddoc_run(@ddoc,
+        ["filters","basic"],
         [[{"key"=>"bam", "good" => true}, {"foo" => "bar"}, {"good" => true}], {"req" => "foo"}]
       ).
       should == [true, [true, false, true]]
     end
   end
-  
+
   describe "update" do
     before(:all) do
       # in another patch we can remove this duplication
@@ -664,8 +664,8 @@ describe "query server normal case" do
       @qs.teach_ddoc(@ddoc)
     end
     it "should return a doc and a resp body" do
-      up, doc, resp = @qs.ddoc_run(@ddoc, 
-        ["updates","basic"], 
+      up, doc, resp = @qs.ddoc_run(@ddoc,
+        ["updates","basic"],
         [{"foo" => "gnarly"}, {"method" => "POST"}]
       )
       up.should == "up"
@@ -692,7 +692,7 @@ describe "query server normal case" do
         }
         @qs.teach_ddoc(@ddoc)
       end
-      
+
       describe "example list" do
         it "should run normal" do
           @qs.ddoc_run(@ddoc,
@@ -707,12 +707,12 @@ describe "query server normal case" do
           @qs.run(["list_end"]).should == ["end" , ["early"]]
         end
       end
-      
+
       describe "headers" do
         it "should do headers proper" do
-          @qs.ddoc_run(@ddoc, ["lists","headers"], 
+          @qs.ddoc_run(@ddoc, ["lists","headers"],
             [{"total_rows"=>1000}, {"q" => "ok"}]
-          ).should == ["start", ["first chunk", 'second "chunk"'], 
+          ).should == ["start", ["first chunk", 'second "chunk"'],
             {"headers"=>{"Content-Type"=>"text/plain"}}]
           @qs.rrun(["list_end"])
           @qs.jsgets.should == ["end", ["tail"]]
@@ -721,7 +721,7 @@ describe "query server normal case" do
 
       describe "with rows" do
         it "should list em" do
-          @qs.ddoc_run(@ddoc, ["lists","rows"], 
+          @qs.ddoc_run(@ddoc, ["lists","rows"],
             [{"foo"=>"bar"}, {"q" => "ok"}]).
             should == ["start", ["first chunk", "ok"], {"headers"=>{}}]
           @qs.rrun(["list_row", {"key"=>"baz"}])
@@ -739,7 +739,7 @@ describe "query server normal case" do
           @qs.jsgets.should == ["end", ["tail"]]
         end
       end
-      
+
       describe "should buffer multiple chunks sent for a single row." do
         it "should should buffer em" do
           @qs.ddoc_run(@ddoc, ["lists","buffer-chunks"],
@@ -757,7 +757,7 @@ describe "query server normal case" do
         @qs.ddoc_run(@ddoc, ["lists","chunky"],
           [{"foo"=>"bar"}, {"q" => "ok"}]).
           should == ["start", ["first chunk", "ok"], {"headers"=>{}}]
-          
+
         @qs.run(["list_row", {"key"=>"baz"}]).
           should ==  ["chunks", ["baz"]]
 
@@ -868,7 +868,7 @@ describe "query server that exits" do
       should_have_exited @qs
     end
   end
-  
+
   describe "fatal error" do
     it "should exit" do
       @qs.ddoc_run(@ddoc, ["shows","fatal"],

@@ -108,13 +108,13 @@ code_change(_OldVersion, State, _Extra) -> {ok, State}.
 
 run(#evstate{ddocs=DDocs}, [<<"reset">>]) ->
     LuaState = luerl:init(),
-    {#evstate{ddocs=DDocs, lua_state=Lua_state}, true};
+    {#evstate{ddocs=DDocs, lua_state=LuaState}, true};
 run(#evstate{ddocs=DDocs}, [<<"reset">>, QueryConfig]) ->
     LuaState = luerl:init(),
     {#evstate{ddocs=DDocs, lua_state=luerl:init(), query_config=QueryConfig}, true};
-run(#evstate{funs=Chunks}=State, [<<"add_fun">> , BinFunc]) ->
+run(#evstate{funs=Chunks, lua_state=LuaState}=State, [<<"add_fun">> , BinFunc]) ->
     {Sig, Chunk, _NewLuaState} = makefun(LuaState, BinFunc),
-    {State#evstate{ funs=Chunks ++ [{Sig,Chunk}] }, true};
+    {State#evstate{ funs=Chunks++[{Sig,Chunk}] }, true};
 run(#evstate{lua_state=LuaState}=State, [<<"map_doc">> , Doc]) ->
     {State, catch mapping(State, Doc)};
 run(State, [<<"reduce">>, Funs, KVs]) ->
@@ -145,31 +145,33 @@ bindings(#evstate{lua_state=LSt0}, Sig, DDoc) ->
 
     LSt1 = luerl:set_table([log], fun([Msg], State) ->
         couch_log:info(Msg, [])
-    end, LSt0)
+    end, LSt0),
 
     LSt2 = luerl:set_table([emit], fun([Id, Value], _State) ->
         Curr = erlang:get(Sig),
         erlang:put(Sig, [[Id, Value] | Curr])
-    end, LSt1)
+    end, LSt1),
 
     LSt2.
 
 % Handle Compilation of Luerl Function
 makefun(State, Source) ->
     Sig = couch_crypto:hash(md5, Source),
-    BoundState = bindings(State, Sig),
-    {Chunk, LuaState} = compilefun(State, Source, BindFuns),
-    {Sig, Chunk, LuaState}.
+    LuaStateBound = bindings(State, Sig),
+    {Chunk, LuaState} = compilefun(LuaStateBound, Source),
+    {Sig, Chunk, LuaStateBound}.
 makefun(State, Source, {DDoc}) ->
     Sig = couch_crypto:hash(md5, lists:flatten([Source, term_to_binary(DDoc)])),
-    BindFuns = bindings(State, Sig, {DDoc}),
-    {Chunk, _LuaState} = compilefun(State, Source, BindFuns),
-    {Sig, Chunk, LuaState}.
-compilefun(#evstate{lua_state=LuaState}, Source, BindFuns) ->
+    LuaStateBound = bindings(State, Sig, {DDoc}),
+    {Chunk, _LuaState} = compilefun(LuaStateBound, Source),
+    {Sig, Chunk, LuaStateBound}.
+compilefun(LuaState, Source) ->
     % Compile Luerl Function into Chunks / Forms for Luerl VM
+    % alternate:
+    %     {[func1], st3} = :luerl.do("return function(a,b) return a+b end", st2)
     case luerl:load(Source, LuaState) of
-        {ok, Fun, NewLuaState} ->
-          {Chunk, NewLuaState}
+        {ok, Chunk, NewLuaState} ->
+          {Chunk, NewLuaState};
         {error, Reason}=Error ->
             couch_log:error("Syntax error on line: ~p~n",
                             Reason),
@@ -177,14 +179,14 @@ compilefun(#evstate{lua_state=LuaState}, Source, BindFuns) ->
     end.
 
 % Handle performing map/reduce requests
-mapping() ->
+mapping(#evstate{funs=MapFuns, lua_state=LuaState}, Doc) ->
   Resp = lists:map(fun({Sig, Chunk}) ->
       erlang:put(Sig, []),
       % Execute Lua Chunk (akak Form / Function )
-      luerl:call_chunk(Chunk, Doc, LuaState)
+      luerl:call_chunk(Chunk, Doc, LuaState),
       % reverse results to match input order
       lists:reverse(erlang:get(Sig))
-  end, State#evstate.funs).
+  end, MapFuns).
 
 reduce(State, BinFuns, Keys, Vals, ReReduce) when is_list(BinFuns) ->
     % Compile Reduce Funs (note: consider caching? )
@@ -192,8 +194,8 @@ reduce(State, BinFuns, Keys, Vals, ReReduce) when is_list(BinFuns) ->
       compilefun(State, RF)
     end, BinFuns),
     % Apply reductions
-    Reds = lists:map(fun({Chunk, _LuaState}) ->
-        Fun(Keys, Vals, ReReduce)
+    Reds = lists:map(fun({Chunk, LuaState}) ->
+        luerl:call_chunk(Chunk, [Keys, Vals, ReReduce], LuaState),
     end, ReduceFuns),
     [true, Reds];
 reduce(State, BinFun, Keys, Vals, ReReduce) ->
