@@ -195,12 +195,12 @@ reduce(State, BinFuns, Keys, Vals, ReReduce) when is_list(BinFuns) ->
     end, BinFuns),
     % Apply reductions
     Reds = lists:map(fun({Chunk, LuaState}) ->
-        luerl:call_chunk(Chunk, [Keys, Vals, ReReduce], LuaState),
+        luerl:call_chunk(Chunk, [Keys, Vals, ReReduce], LuaState)
     end, ReduceFuns),
     [true, Reds];
 reduce(State, BinFun, Keys, Vals, ReReduce) ->
     reduce(State, [BinFun], Keys, Vals, ReReduce).
-reduce(State, BinFun, KVPairs, ReReduce) ->
+reduce(State, BinFun, KVs, ReReduce) ->
     {Keys, Vals} = lists:foldl(fun([K, V], {KAcc, VAcc}) ->
         {[K | KAcc], [V | VAcc]}
     end, {[], []}, KVs),
